@@ -5,7 +5,9 @@ library(lubridate)
 library(stringr)
 library(geosphere)
 library(ggmap)
+library(grid)
 
+### load data ####
 
 MILES_TO_METERS <- 1609.34
 
@@ -25,7 +27,7 @@ ext_tracks <- read_fwf("ebtrk_atlc_1988_2015.txt",
                        na = "-99")
 
 
-#### now the fun starts 
+#### transform data #### 
 
 ext_tracks_2 <- ext_tracks %>%
   select(-max_wind, -min_pressure, -rad_max_wind, -eye_diameter, -pressure_1, -pressure_2) %>%
@@ -36,29 +38,31 @@ ext_tracks_2 <- ext_tracks %>%
   mutate(date = lubridate::as_datetime(date)) %>%
   pivot_longer(matches("radius_[0-9]{2}_[a-z]{2}"), names_pattern = "radius_([0-9]{2}_[a-z]{2})") %>%
   separate(name, sep="_", into=c("wind_speed", "temp")) %>%
-  pivot_wider(id_cols=c("date", "storm_id", "wind_speed", "temp", "latitude", "longitude"), 
-              values_from=value, names_from=temp) %>%
+  pivot_wider(
+    id_cols=c("date", "storm_id", "wind_speed", "temp", "latitude", "longitude"), 
+    values_from=value, names_from=tem
+  ) %>%
   mutate(wind_speed=as.numeric(wind_speed), longitude=-longitude) %>%
   filter(storm_id=="Katrina-2005")
 
 
 sample_slice <- ext_tracks_2[46:48, ]
 
+#### ####
+
+
 generate_quarter_circle <- function(p, r, n, start_deg=0) {
+  
   increment <- 90 / n
   
   points <- matrix(nrow=n+1, ncol=2)
   
   for (i in 1:(n+1)) {
     b <- (i-1)*increment + start_deg
-    points[i, c(1,2)] <- destPoint(
-      p=p, 
-      b=b ,
-      d=r*MILES_TO_METERS)
+    points[i, c(1,2)] <- destPoint(p=p, b=b, d=r*MILES_TO_METERS)
   }
   return(points)
 }
-
 
 
 generate_radii <- function(p, radii) {
@@ -67,43 +71,38 @@ generate_radii <- function(p, radii) {
   
   sample_points <- generate_quarter_circle(p, radii[1], n=20, start_deg=start_degrees[1])
   for (i in 2:4) {
-    temp <- generate_quarter_circle(p, radii[i], n=20, start_deg=start_degrees[i])
-    sample_points <- rbind(sample_points, temp)
+    sample_points <- rbind(sample_points,  generate_quarter_circle(p, radii[i], n=20, start_deg=start_degrees[i]))
   }
+  output <- as_tibble(rbind(p, sample_points))
+  colnames(output) <- c("lon", "lat")
+  rownames(output) <- NULL
   
-  return(sample_points)
-  
+  return(output)
 }
 
 
 p <- c(-84,24.4)
 
-sample_points <- generate_quarter_circle(p, 200, 20)
+sample_points <- rbind(p, data.frame(generate_quarter_circle(p, 200, 20)))
+colnames(sample_points) <- c("lon", "lat")
 
-sample_points_1 <- data.frame(rbind(p, generate_radii(p, c(130, 90, 90, 130))))
-colnames(sample_points_1) <- c("lon", "lat")
-sample_points_2 <- data.frame(rbind(p,generate_radii(p, c(60,60,45,60))))
-colnames(sample_points_2) <- c("lon", "lat")
-sample_points_3 <- data.frame(rbind(p,generate_radii(p, c(35,30,30,25))))
-colnames(sample_points_3) <- c("lon", "lat")
+sample_points_1 <- generate_radii(p, c(130, 90, 90, 130))
+sample_points_2 <- generate_radii(p, c(60,60,45,60))
+sample_points_3 <- generate_radii(p, c(35,30,30,25))
 
 
 ggplot() + 
-  geom_polygon(data=sample_points_1, aes(x=lon, y=lat))
+  geom_polygon(data=sample_points_1, aes(x=lon, y=lat), alpha=0.5, fill="yellow") + 
+  geom_polygon(data=sample_points_2, aes(x=lon, y=lat), alpha=0.5, fill="orange") + 
+  geom_polygon(data=sample_points_3, aes(x=lon, y=lat), alpha=0.5, fill="red") 
 
 
-my_poly <- polygonGrob(
-  x=c(0.25,0.25,0.75), y=c(0.25,0.75,0.75),
-  gp= gpar(col="black", fill="gray0", alpha=0.5)
-)
+#my_poly <- polygonGrob(
+#  x=c(0.25,0.25,0.75), y=c(0.25,0.75,0.75),
+#  gp= gpar(col="black", fill="gray0", alpha=0.5)
+#)
+#grid.draw(my_poly)
 
-grid.draw(my_poly)
-
-
-
-
-temp <- data.frame(rbind(p, sample_points))
-colnames(temp) <- c("lon", "lat")
 
 base_map <- get_map(p, zoom=7, source="stamen", maptype="toner")
 
@@ -120,7 +119,7 @@ ggmap::register_google(GOOGLEMAPS_API_KEY)
 #### the geom
 
 draw_panel <- function(data, panel_scales, coord) {
-  coords <- coord$transform(data, panel_scales) 
+  #data <- coord$transform(data, panel_scales) 
   
   radii <- c(
     data$ne,
@@ -131,25 +130,26 @@ draw_panel <- function(data, panel_scales, coord) {
 
   center_point <- c(data$x, data$y)
 
-  radii_data <- data.frame(rbind(center_point, generate_radii(center_point, radii)))
-  colnames(radii_data) <- c("x", "y")
-  rownames(radii_data) <- NULL
+  radii_data <- generate_radii(center_point, radii) %>%
+    rename(x=lon, y=lat)
+  #colnames(radii_data) <- c("x", "y")
+  #print(head(radii_data))
   
- radii_coords <- coord$transform(radii_data, panel_scales)
+  radii_coords <- coord$transform(radii_data, panel_scales)
+  print(radii_coords)
 
   grid::polygonGrob(
-    x = radii_data$x,
-    y = radii_data$y,
-    default.units="native",
-    gp = grid::gpar(fill="black", col="black", alpha=0.5)
+    x = radii_coords$x,
+    y = radii_coords$y,
+    gp = grid::gpar(fill="red", col="red", alpha=0.5)
   )
 
-  ggplot2:::ggname("geom_polygon", GeomPolygon$draw_panel(radii_data, panel_scales, coord))
+  #ggplot2:::ggname("geom_polygon", GeomPolygon$draw_panel(radii_data, panel_scales, coord))
 }
 
 GeomHurricane <- ggproto("GeomHurricane", GeomPolygon,
           required_aes = c("x","y", "ne", "se", "sw", "nw"),
-          default_aes = aes(colour="black", alpha=0.5, fill="black"),
+          default_aes = aes(colour="black", alpha=0.5, fill="black", size=0.5),
           draw_key = draw_key_polygon,
           draw_panel = draw_panel)
 
@@ -164,16 +164,23 @@ geom_hurricane <- function(mapping=NULL, data=NULL, stat="identity", position="i
 }
 
 base_map %>%
-  ggmap()
+  ggmap() + 
+  geom_polygon(data=sample_points_1, aes(x=lon, y=lat), alpha=0.5, fill="yellow") + 
+  geom_polygon(data=sample_points_2, aes(x=lon, y=lat), alpha=0.5, fill="orange") + 
+  geom_polygon(data=sample_points_3, aes(x=lon, y=lat), alpha=0.5, fill="red") 
 
+base_map %>%
+  ggmap()  + geom_hurricane(data=sample_slice[1, ],
+                            aes(x=longitude, y=latitude, ne=ne, se=se, sw=sw, nw=nw, group=wind_speed))
+  
 ggplot() + 
-  geom_hurricane(data=sample_slice,
+  geom_hurricane(data=sample_slice[1, ],
             aes(x=longitude, y=latitude, ne=ne, se=se, sw=sw, nw=nw, group=wind_speed))
 
 
 
-
-
+# https://github.com/learner42/CourseraRdataVisualizationFinal/blob/master/R/geom_hurricane.R
+# https://github.com/philippB-on-git/geom_hurricane/blob/main/geom_hurricane.R
 
 
 
