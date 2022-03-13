@@ -40,13 +40,13 @@ ext_tracks_2 <- ext_tracks %>%
   separate(name, sep="_", into=c("wind_speed", "temp")) %>%
   pivot_wider(
     id_cols=c("date", "storm_id", "wind_speed", "temp", "latitude", "longitude"), 
-    values_from=value, names_from=tem
+    values_from=value, names_from=temp
   ) %>%
-  mutate(wind_speed=as.numeric(wind_speed), longitude=-longitude) %>%
+  mutate(wind_speed=as.numeric(wind_speed), longitude=-longitude, wind_speed=as.factor(wind_speed)) %>%
   filter(storm_id=="Katrina-2005")
 
 
-sample_slice <- ext_tracks_2[46:48, ]
+sample_slice <- ext_tracks_2[70:72, ]
 
 #### ####
 
@@ -81,7 +81,7 @@ generate_radii <- function(p, radii) {
 }
 
 
-p <- c(-84,24.4)
+p <- c(-89.6,29.5)
 
 sample_points <- rbind(p, data.frame(generate_quarter_circle(p, 200, 20)))
 colnames(sample_points) <- c("lon", "lat")
@@ -104,7 +104,7 @@ ggplot() +
 #grid.draw(my_poly)
 
 
-base_map <- get_map(p, zoom=7, source="stamen", maptype="toner")
+base_map <- get_map(p, zoom=6, source="stamen", maptype="toner")
 
 # base_map %>%
 #   ggmap() +
@@ -118,69 +118,70 @@ ggmap::register_google(GOOGLEMAPS_API_KEY)
 
 #### the geom
 
-draw_panel <- function(data, panel_scales, coord) {
-  #data <- coord$transform(data, panel_scales) 
-  
+create_grob <- function(data, panel_scales, coord){
   radii <- c(
     data$ne,
     data$se,
     data$sw,
     data$nw
   )
-
+  
   center_point <- c(data$x, data$y)
-
+  
   radii_data <- generate_radii(center_point, radii) %>%
     rename(x=lon, y=lat)
-  #colnames(radii_data) <- c("x", "y")
-  #print(head(radii_data))
   
   radii_coords <- coord$transform(radii_data, panel_scales)
-  print(radii_coords)
-
+  
   grid::polygonGrob(
     x = radii_coords$x,
     y = radii_coords$y,
-    gp = grid::gpar(fill="red", col="red", alpha=0.5)
-  )
+    gp = grid::gpar(fill=data$fill, color=data$color, alpha=0.5))
+}
 
-  #ggplot2:::ggname("geom_polygon", GeomPolygon$draw_panel(radii_data, panel_scales, coord))
+draw_panel <- function(data, panel_scales, coord) {
+
+  gTree(children=gList(
+    create_grob(data[1,], panel_scales, coord),
+    create_grob(data[2,], panel_scales, coord),
+    create_grob(data[3,], panel_scales, coord)
+  ))
+  
+  
 }
 
 GeomHurricane <- ggproto("GeomHurricane", GeomPolygon,
-          required_aes = c("x","y", "ne", "se", "sw", "nw"),
-          default_aes = aes(colour="black", alpha=0.5, fill="black", size=0.5),
+          required_aes = c("x","y", "ne", "se", "sw", "nw", "fill"),
+          default_aes = aes(color="yellow", alpha=0.5, fill="yellow", size=0.5),
           draw_key = draw_key_polygon,
           draw_panel = draw_panel)
 
 geom_hurricane <- function(mapping=NULL, data=NULL, stat="identity", position="identity", na.rm=FALSE,
                            show.legend=NA, inherit.aes=TRUE, ...) {
-  
   layer(
-    geom=GeomHurricane, mapping=mapping, data=data, stat=stat, position=position, show.legend=show.legend,
-    inherit.aes = inherit.aes, params=list(na.rm=na.rm, ...)
+    geom=GeomHurricane, 
+    mapping=mapping, 
+    data=data, 
+    stat=stat, 
+    position=position, 
+    show.legend=show.legend,
+    inherit.aes = inherit.aes, 
+    params=list(na.rm=na.rm, ...)
   )
-  
 }
 
-base_map %>%
-  ggmap() + 
-  geom_polygon(data=sample_points_1, aes(x=lon, y=lat), alpha=0.5, fill="yellow") + 
-  geom_polygon(data=sample_points_2, aes(x=lon, y=lat), alpha=0.5, fill="orange") + 
-  geom_polygon(data=sample_points_3, aes(x=lon, y=lat), alpha=0.5, fill="red") 
+#base_map %>%
+#  ggmap() + 
+#  geom_polygon(data=sample_points_1, aes(x=lon, y=lat), alpha=0.5, fill="yellow") + 
+#  geom_polygon(data=sample_points_2, aes(x=lon, y=lat), alpha=0.5, fill="orange") + 
+#  geom_polygon(data=sample_points_3, aes(x=lon, y=lat), alpha=0.5, fill="red") 
 
 base_map %>%
-  ggmap()  + geom_hurricane(data=sample_slice[1, ],
-                            aes(x=longitude, y=latitude, ne=ne, se=se, sw=sw, nw=nw, group=wind_speed))
+  ggmap()  + geom_hurricane(data=sample_slice,
+                            aes(x=longitude, y=latitude, ne=ne, se=se, sw=sw, nw=nw, fill=wind_speed, color=wind_speed)) + 
+  scale_fill_manual(values=c("red", "orange", "yellow")) + 
+  scale_color_manual(values=c("red", "orange", "yellow"))
   
-ggplot() + 
-  geom_hurricane(data=sample_slice[1, ],
-            aes(x=longitude, y=latitude, ne=ne, se=se, sw=sw, nw=nw, group=wind_speed))
-
-
-
-# https://github.com/learner42/CourseraRdataVisualizationFinal/blob/master/R/geom_hurricane.R
-# https://github.com/philippB-on-git/geom_hurricane/blob/main/geom_hurricane.R
 
 
 
