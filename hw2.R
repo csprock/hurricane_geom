@@ -51,7 +51,7 @@ sample_slice <- ext_tracks_2[70:72, ]
 #### ####
 
 
-generate_quarter_circle <- function(p, r, n, start_deg=0) {
+generate_quarter_circle <- function(p, r, n, start_deg=0, scale_radii=1) {
   
   increment <- 90 / n
   
@@ -59,19 +59,19 @@ generate_quarter_circle <- function(p, r, n, start_deg=0) {
   
   for (i in 1:(n+1)) {
     b <- (i-1)*increment + start_deg
-    points[i, c(1,2)] <- destPoint(p=p, b=b, d=r*MILES_TO_METERS)
+    points[i, c(1,2)] <- destPoint(p=p, b=b, d=r*MILES_TO_METERS*scale_radii)
   }
   return(points)
 }
 
 
-generate_radii <- function(p, radii) {
+generate_radii <- function(p, radii, scale_radii=1) {
   
   start_degrees <- c(0, 90, 180, 270)
   
-  sample_points <- generate_quarter_circle(p, radii[1], n=20, start_deg=start_degrees[1])
+  sample_points <- generate_quarter_circle(p, radii[1], n=20, start_deg=start_degrees[1], scale_radii)
   for (i in 2:4) {
-    sample_points <- rbind(sample_points,  generate_quarter_circle(p, radii[i], n=20, start_deg=start_degrees[i]))
+    sample_points <- rbind(sample_points,  generate_quarter_circle(p, radii[i], n=20, start_deg=start_degrees[i], scale_radii))
   }
   output <- as_tibble(rbind(p, sample_points))
   colnames(output) <- c("lon", "lat")
@@ -86,9 +86,9 @@ p <- c(-89.6,29.5)
 sample_points <- rbind(p, data.frame(generate_quarter_circle(p, 200, 20)))
 colnames(sample_points) <- c("lon", "lat")
 
-sample_points_1 <- generate_radii(p, c(130, 90, 90, 130))
+sample_points_1 <- generate_radii(p, c(130, 90, 90, 130), 1)
 sample_points_2 <- generate_radii(p, c(60,60,45,60))
-sample_points_3 <- generate_radii(p, c(35,30,30,25))
+sample_points_3 <- generate_radii(p, c(35,30,30,25), 1)
 
 
 ggplot() + 
@@ -128,7 +128,9 @@ create_grob <- function(data, panel_scales, coord){
   
   center_point <- c(data$x, data$y)
   
-  radii_data <- generate_radii(center_point, radii) %>%
+  scale_radii <- data$scale_radii[1]
+  
+  radii_data <- generate_radii(center_point, radii, scale_radii) %>%
     rename(x=lon, y=lat)
   
   radii_coords <- coord$transform(radii_data, panel_scales)
@@ -151,8 +153,8 @@ draw_panel <- function(data, panel_scales, coord) {
 }
 
 GeomHurricane <- ggproto("GeomHurricane", GeomPolygon,
-          required_aes = c("x","y", "ne", "se", "sw", "nw", "fill"),
-          default_aes = aes(color="yellow", alpha=0.5, fill="yellow", size=0.5),
+          required_aes = c("x","y", "ne", "se", "sw", "nw"),
+          default_aes = aes(color="yellow", alpha=0.5, fill="yellow", size=0.5, scale_radii=1),
           draw_key = draw_key_polygon,
           draw_panel = draw_panel)
 
@@ -178,9 +180,9 @@ geom_hurricane <- function(mapping=NULL, data=NULL, stat="identity", position="i
 
 base_map %>%
   ggmap()  + geom_hurricane(data=sample_slice,
-                            aes(x=longitude, y=latitude, ne=ne, se=se, sw=sw, nw=nw, fill=wind_speed, color=wind_speed)) + 
-  scale_fill_manual(values=c("red", "orange", "yellow")) + 
-  scale_color_manual(values=c("red", "orange", "yellow"))
+                            aes(x=longitude, y=latitude, ne=ne, se=se, sw=sw, nw=nw, fill=wind_speed, color=wind_speed, scale_radii=0.5)) + 
+  scale_fill_manual(values=c("red", "orange", "yellow"), name="Wind speed (kts)") + 
+  scale_color_manual(values=c("red", "orange", "yellow"), name="Wind speed (kts)")
   
 
 
