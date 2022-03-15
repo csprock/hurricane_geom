@@ -10,7 +10,7 @@ library(grid)
 FILE_LOCATION <- "data/ebtrk_atlc_1988_2015.txt"
 PROCESSED_DATA_LOCATION <- "katrina_sample.csv"
 PICTURE_LOCATION <- "katrina_picture.png"
-GOOGLEMAPS_API_KEY="AIzaSyCYj7_cl6Nlp5Sjn1SU13TpQTDey5iJ_Mw"
+GOOGLEMAPS_API_KEY=""
 MILES_TO_METERS <- 1609.34
 
 ggmap::register_google(GOOGLEMAPS_API_KEY)
