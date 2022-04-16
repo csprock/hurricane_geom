@@ -1,67 +1,21 @@
-library(readr)
-library(dplyr)
-library(tidyr)
-library(lubridate)
-library(geosphere)
-library(ggmap)
-library(grid)
-
-### define parameters ###
-FILE_LOCATION <- "data/ebtrk_atlc_1988_2015.txt"
-PROCESSED_DATA_LOCATION <- "katrina_sample.csv"
-PICTURE_LOCATION <- "katrina_picture.png"
-GOOGLEMAPS_API_KEY=""
-MILES_TO_METERS <- 1609.34
-
-ggmap::register_google(GOOGLEMAPS_API_KEY)
-
-### load data ####
-
-ext_tracks_widths <- c(7, 10, 2, 2, 3, 5, 5, 6, 4, 5, 4, 4, 5, 3, 4, 3, 3, 3,
-                       4, 3, 3, 3, 4, 3, 3, 3, 2, 6, 1)
-ext_tracks_colnames <- c("storm_id", "storm_name", "month", "day",
-                         "hour", "year", "latitude", "longitude",
-                         "max_wind", "min_pressure", "rad_max_wind",
-                         "eye_diameter", "pressure_1", "pressure_2",
-                         paste("radius_34", c("ne", "se", "sw", "nw"), sep = "_"),
-                         paste("radius_50", c("ne", "se", "sw", "nw"), sep = "_"),
-                         paste("radius_64", c("ne", "se", "sw", "nw"), sep = "_"),
-                         "storm_type", "distance_to_land", "final")
-
-ext_tracks <- readr::read_fwf(FILE_LOCATION, 
-                       fwf_widths(ext_tracks_widths, ext_tracks_colnames),
-                       na = "-99")
-
-
-#### transform data #### 
-
-processed_data <- ext_tracks %>%
-  dplyr::select(-max_wind, -min_pressure, -rad_max_wind, -eye_diameter, -pressure_1, -pressure_2) %>%
-  tidyr::unite(date, c("year", "month", "day"), sep="-", remove=FALSE) %>%
-  dplyr::mutate(time=paste(hour,"00:00", sep=":"), storm_name=str_to_title(storm_name)) %>%
-  tidyr::unite(storm_id, c("storm_name", "year"), sep="-") %>%
-  tidyr::unite(date, c("date", "time"), sep=" ") %>%
-  dplyr::mutate(date = lubridate::as_datetime(date)) %>%
-  tidyr::pivot_longer(matches("radius_[0-9]{2}_[a-z]{2}"), names_pattern = "radius_([0-9]{2}_[a-z]{2})") %>%
-  tidyr::separate(name, sep="_", into=c("wind_speed", "temp")) %>%
-  tidyr::pivot_wider(
-    id_cols=c("date", "storm_id", "wind_speed", "temp", "latitude", "longitude"), 
-    values_from=value, names_from=temp
-  ) %>%
-  dplyr::mutate(wind_speed=as.numeric(wind_speed), longitude=-longitude, wind_speed=as.factor(wind_speed)) %>%
-  dplyr::filter(storm_id=="Katrina-2005")
-
-
-katrina_sample <- processed_data %>% 
-    dplyr::filter(storm_id=="Katrina-2005") %>%
-    dplyr::slice(70:72)
-
-print(katrina_sample)
-
-readr::write_csv(katrina_sample, PROCESSED_DATA_LOCATION)
-
-#### geometry helper functions ####
-
+#' Generate a single quadrant
+#' 
+#' This function generates the coordinates of a single quandrant 
+#' of the hurricane wind figure. The function sweeps out a 90 degree
+#' quarter circle about a centeral point starting with a user-specified
+#' start degree. 
+#' 
+#' Under the hood this function calls geosphere::destPoint.
+#' 
+#' @param p vector of length 2 containing longitude and latitude
+#' @param r radius in miles
+#' @param start_deg degree of the start 
+#' @param scale_radii multiple to shrink or expand radii
+#' 
+#' @return a 2-column matrix coordinate of points (longitude/latitude)
+#' 
+#' @example 
+#' generate_quarter_circle(c(-84, 25), 1000, 180)
 generate_quarter_circle <- function(p, r, start_deg=0, scale_radii=1){
   
   points <- cbind(start_deg, seq(start_deg, start_deg + 90, 1))
@@ -69,6 +23,22 @@ generate_quarter_circle <- function(p, r, start_deg=0, scale_radii=1){
   
 }
 
+
+#' Generate all the quandrants.
+#' 
+#' Generates each quandrant separately by calling
+#' generate_quarter_circle on the radii of each quandrant starting 
+#' with the NE and moving clockwise ending with the NW. 
+#' 
+#' @param p vector of length 2 containing longitude and latitude
+#' @param radii vector of length 4 containing the radius of each quandrant
+#' in clockwise order (ne, se, sw, nw)
+#' @param scale_radii multiple to shrink or expand radii, default is 1
+#' 
+#' @return a tibble containing the coordinates of the quandrants (lon/lat)
+#' 
+#' @example
+#' generate_radii(c(-84, 25), c(30, 60, 30, 90))
 generate_radii <- function(p, radii, scale_radii=1) {
   
   data <- do.call(
@@ -83,8 +53,21 @@ generate_radii <- function(p, radii, scale_radii=1) {
   return(as_tibble(data))
 }
 
-#### the geom ####
 
+#' Creates a single windspeed grob
+#' 
+#' Creates a single windspeed grob with all 4 quandrants by for 
+#' a single windspeed. This function is called by draw_panel
+#' on all three windspeeds to create the composite grob. 
+#' 
+#' @param data
+#' @param panel_scales
+#' @param coord
+#' 
+#' @seealso generate_radii
+#' @seealso draw_panel
+#' 
+#' @return a polygon grob representing the windspeed figure
 create_grob <- function(data, panel_scales, coord){
   
   radii <- c(data$ne, data$se, data$sw, data$nw)
@@ -101,6 +84,17 @@ create_grob <- function(data, panel_scales, coord){
     gp = grid::gpar(fill=data$fill, color=data$color, alpha=data$alpha[1]))
 }
 
+#' Creates hurricane grob
+#'
+#' Is a wrapper around \code{create_grob} which creates a grob tree
+#' for each row in the passed dataframe representing each windspeed
+#' level.
+#' 
+#' @param data 3-row dataframe, each row represents a windspeed level
+#' @param panel_scales object containing information about the draw scale
+#' @param coord object containing information about coordinates
+#' 
+#' @return a grob tree
 draw_panel <- function(data, panel_scales, coord) {
 
   gTree(children=gList(
@@ -109,14 +103,15 @@ draw_panel <- function(data, panel_scales, coord) {
     create_grob(data[3,], panel_scales, coord)
   ))
   
-  
 }
+
 
 GeomHurricane <- ggproto("GeomHurricane", GeomPolygon,
           required_aes = c("x","y", "ne", "se", "sw", "nw"),
           default_aes = aes(color="yellow", alpha=0.75, fill="yellow", size=0.5, scale_radii=1),
           draw_key = draw_key_polygon,
           draw_panel = draw_panel)
+
 
 geom_hurricane <- function(
   mapping=NULL, 
@@ -137,28 +132,3 @@ geom_hurricane <- function(
     params=list(na.rm=na.rm, ...)
   )
 }
-
-#### create the image ####
-
-base_map <- get_map(p, zoom=6, source="stamen", maptype="toner")
-
-katrina_picture <- base_map %>%
-  ggmap()  + geom_hurricane(
-    data=katrina_sample,
-    alpha=0.5,
-    aes(
-      x=longitude, 
-      y=latitude, 
-      ne=ne, 
-      se=se, 
-      sw=sw, 
-      nw=nw, 
-      fill=wind_speed, 
-      color=wind_speed, 
-      scale_radii=0.9)
-    ) + 
-  scale_fill_manual(values=c("red", "orange", "yellow"), name="Wind speed (kts)") + 
-  scale_color_manual(values=c("red", "orange", "yellow"), name="Wind speed (kts)")
-
-
-ggsave(PICTURE_LOCATION, katrina_picture)
