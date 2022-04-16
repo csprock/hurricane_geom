@@ -8,14 +8,22 @@ library(grid)
 
 source("~/hurricane_geom.R")
 
-### define parameters ###
+################################
+### define script parameters ###
+################################
+
 FILE_LOCATION <- "data/ebtrk_atlc_1988_2015.txt"
-PROCESSED_DATA_LOCATION <- "katrina_sample.csv"
+PROCESSED_DATA_LOCATION <- "katrina_sample.csv"   # used Katrina instead of Ike for assignment
 PICTURE_LOCATION <- "katrina_picture.png"
 GOOGLEMAPS_API_KEY=""
 MILES_TO_METERS <- 1609.34
 
 ggmap::register_google(GOOGLEMAPS_API_KEY)
+
+################################################
+### Load and process data and draw hurricane ###
+################################################
+
 
 ### load data ####
 

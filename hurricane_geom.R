@@ -105,10 +105,24 @@ draw_panel <- function(data, panel_scales, coord) {
   
 }
 
-
+#' 
+#' @param required_aes a character vector of required aesthetics
+#' \enumerate{
+#'  \item x, y, longitude and latitude representing the center of the hurricane 
+#'  \item ne, se, sw, nw. The radius of the windspeed in miles for the northeast, southeast, southwest, and northwest directions, respectively. 
+#' }
+#' @param default_aes default aesthetics, which include
+#' \enumerate{
+#'  \item color border color
+#'  \item alpha transparency
+#'  \item fill fill color
+#'  \item scale_radii factor by which to scale the radii of windspeed. This controls size of the hurricane windspeed radii relative to the base map. 
+#' }
+#' @param draw_key the function that draws the legend key, defaults to the polygon glyph key
+#' @param draw_panel function that generates the grobs that are added to the figure
 GeomHurricane <- ggproto("GeomHurricane", GeomPolygon,
           required_aes = c("x","y", "ne", "se", "sw", "nw"),
-          default_aes = aes(color="yellow", alpha=0.75, fill="yellow", size=0.5, scale_radii=1),
+          default_aes = aes(color="yellow", alpha=0.75, fill="yellow", scale_radii=1),
           draw_key = draw_key_polygon,
           draw_panel = draw_panel)
 
